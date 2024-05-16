@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/tealeg/xlsx"
 )
@@ -19,18 +20,30 @@ const (
 type bankParse struct {
 	rowDeletionTop    int
 	rowDeletionBottom int
-	rowExclusion      string
 	mapping           map[string]int
 }
 
 func main() {
-	// Replace "your-bank-statement.xlsx" with the actual path to your Excel file
-	filePath := "bank.xlsx"
+	// Get the first xls file from current directory
+	files, err := os.ReadDir(".")
+	if err != nil {
+		log.Fatalf("Error reading directory: %v", err)
+	}
+	var filePath string
+	for _, file := range files {
+		// Check if extension is xlsx
+		if strings.Contains(file.Name(), ".xlsx") {
+			filePath = file.Name()
+		}
+	}
+
+	if filePath == "" {
+		log.Fatalf("No Excel file found in the current directory")
+	}
 
 	finecoParse := bankParse{
 		rowDeletionTop:    7,
 		rowDeletionBottom: 0,
-		rowExclusion:      "",
 		mapping: map[string]int{
 			date:    0,
 			inflow:  1,
@@ -66,11 +79,18 @@ func mapToCSV(sheet *xlsx.Sheet, parse bankParse) [][]string {
 
 	// [A:Date] [B:Inflow][C:Outflow][E:Memo]
 	// Assuming the columns are A, B, C, and E
+	log.Printf("Mapping: %v", len(sheet.Rows))
+
 	for _, row := range sheet.Rows {
 		date := row.Cells[parse.mapping[date]].String()
 		inflow := row.Cells[parse.mapping[inflow]].String()
 		outflow := row.Cells[parse.mapping[outflow]].String()
 		memo := row.Cells[parse.mapping[memo]].String()
+
+		log.Printf("Date: %s, Inflow: %s, Outflow: %s, Memo: %s", date, inflow, outflow, memo)
+		if len(outflow) != 0 && outflow[0] == '-' {
+			outflow = outflow[1:]
+		}
 
 		remappedRow := []string{date, inflow, outflow, memo, "", ""}
 		remappedData = append(remappedData, remappedRow)
@@ -84,16 +104,6 @@ func cleanData(sheet *xlsx.Sheet, parse bankParse) {
 
 	// Remove the specified number of rows from the end of the sheet
 	sheet.Rows = sheet.Rows[:len(sheet.Rows)-parse.rowDeletionBottom]
-
-	// Remove the specified row if any of the containing cells match the specified string
-	for i, row := range sheet.Rows {
-		for _, cell := range row.Cells {
-			if cell.Value == parse.rowExclusion {
-				sheet.RemoveRowAtIndex(i)
-				break
-			}
-		}
-	}
 }
 
 func saveToCSV(data [][]string, filePath string) error {
