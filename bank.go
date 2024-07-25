@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,52 +16,81 @@ const (
 	inflow  = "Inflow"
 	outflow = "Outflow"
 	memo    = "Memo"
+	circuit = "Circuit"
 )
 
 type bankParse struct {
 	rowDeletionTop    int
 	rowDeletionBottom int
+	excludedCircuit   string
 	mapping           map[string]int
 }
 
 func main() {
-	// Get the first xls file from current directory
-	files, err := os.ReadDir(".")
-	if err != nil {
-		log.Fatalf("Error reading directory: %v", err)
-	}
-	var filePath string
-	for _, file := range files {
-		// Check if extension is xlsx
-		if strings.Contains(file.Name(), ".xlsx") {
-			filePath = file.Name()
+	fileName := flag.String("file", "", "The name of the file to parse")
+	parseType := flag.String("type", "fineco", "The type of the file to parse")
+
+	if *fileName == "" {
+		// Get the first xls file from current directory
+		files, err := os.ReadDir(".")
+		if err != nil {
+			log.Fatalf("Error reading directory: %v", err)
 		}
+		var filePath string
+		for _, file := range files {
+			// Check if extension is xlsx
+			if strings.Contains(file.Name(), ".xls") {
+				filePath = file.Name()
+			}
+		}
+
+		if filePath == "" {
+			log.Fatalf("No Excel file found in the current directory")
+		}
+
+		fileName = &filePath
 	}
 
-	if filePath == "" {
-		log.Fatalf("No Excel file found in the current directory")
-	}
-
-	finecoParse := bankParse{
-		rowDeletionTop:    7,
-		rowDeletionBottom: 0,
-		mapping: map[string]int{
-			date:    0,
-			inflow:  1,
-			outflow: 2,
-			memo:    4,
-		},
+	var parse bankParse
+	switch *parseType {
+	case "fineco":
+		parse := bankParse{
+			rowDeletionTop:    7,
+			rowDeletionBottom: 0,
+			mapping: map[string]int{
+				date:    0,
+				inflow:  1,
+				outflow: 2,
+				memo:    4,
+			},
+		}
+	case "mastercard":
+		parse := bankParse{
+			rowDeletionTop:    3,
+			rowDeletionBottom: 3,
+			excludedCircuit:   "BANCOMAT",
+			mapping: map[string]int{
+				date:    3,
+				inflow:  0, // Empty row as inflow
+				outflow: 10,
+				memo:    5,
+				circuit: 8,
+			},
+		}
+	default:
+		log.Fatalf("Unknown parse type: %s", *parseType)
 	}
 
 	// Open the Excel file
-	xlFile, err := xlsx.OpenFile(filePath)
+	xlFile, err := xlsx.OpenFile(*fileName)
+	log.Printf("Opening file: %s", *fileName)
 	if err != nil {
 		log.Fatalf("Error opening Excel file: %v", err)
 	}
 
 	sheet := xlFile.Sheets[0]
-	cleanData(sheet, finecoParse)
-	remappedData := mapToCSV(sheet, finecoParse)
+	cleanData(sheet, parse)
+	remappedData := mapToCSV(sheet, parse)
 
 	// Save the remapped data to a CSV file
 	csvFilePath := "remapped-bank-statement.csv"
@@ -82,12 +112,18 @@ func mapToCSV(sheet *xlsx.Sheet, parse bankParse) [][]string {
 	log.Printf("Mapping: %v", len(sheet.Rows))
 
 	for _, row := range sheet.Rows {
-		date := row.Cells[parse.mapping[date]].String()
+		dateString := row.Cells[parse.mapping[date]].String()
+		log.Printf("rawDate: %v", dateString)
+		date := dateString
 		inflow := row.Cells[parse.mapping[inflow]].String()
 		outflow := row.Cells[parse.mapping[outflow]].String()
 		memo := row.Cells[parse.mapping[memo]].String()
+		if parse.excludedCircuit != "" && row.Cells[parse.mapping[circuit]].String() == parse.excludedCircuit {
+			continue
+		}
+		circuit := row.Cells[parse.mapping[circuit]].String()
 
-		log.Printf("Date: %s, Inflow: %s, Outflow: %s, Memo: %s", date, inflow, outflow, memo)
+		log.Printf("Date: %s, Inflow: %s, Outflow: %s, Memo: %s, circuit: %s", date, inflow, outflow, memo, circuit)
 		if len(outflow) != 0 && outflow[0] == '-' {
 			outflow = outflow[1:]
 		}
