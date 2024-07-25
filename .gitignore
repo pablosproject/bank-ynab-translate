@@ -22,4 +22,11 @@ go.work
 
 # Created files
 *.xlsx
+*.xls
 *.csv
+
+# Exclusion rules for test_fineco.xlsx and test_mastercard.xls
+!test_fineco.xlsx
+!test_mastercard.xls
+
+.vscode
