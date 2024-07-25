@@ -29,6 +29,7 @@ type bankParse struct {
 func main() {
 	fileName := flag.String("file", "", "The name of the file to parse")
 	parseType := flag.String("type", "fineco", "The type of the file to parse")
+	output := flag.String("output", "remapped-bank-statement.csv", "The name of the output file")
 
 	if *fileName == "" {
 		// Get the first xls file from current directory
@@ -51,10 +52,18 @@ func main() {
 		fileName = &filePath
 	}
 
+	if *parseType != "fineco" && *parseType != "mastercard" {
+		log.Fatalf("Unknown parse type: %s", *parseType)
+	}
+
+	processData(parseType, fileName, output)
+}
+
+func processData(parseType *string, fileName *string, output *string) {
 	var parse bankParse
 	switch *parseType {
 	case "fineco":
-		parse := bankParse{
+		parse = bankParse{
 			rowDeletionTop:    7,
 			rowDeletionBottom: 0,
 			mapping: map[string]int{
@@ -65,13 +74,13 @@ func main() {
 			},
 		}
 	case "mastercard":
-		parse := bankParse{
+		parse = bankParse{
 			rowDeletionTop:    3,
 			rowDeletionBottom: 3,
 			excludedCircuit:   "BANCOMAT",
 			mapping: map[string]int{
 				date:    3,
-				inflow:  0, // Empty row as inflow
+				inflow:  0,
 				outflow: 10,
 				memo:    5,
 				circuit: 8,
@@ -81,7 +90,6 @@ func main() {
 		log.Fatalf("Unknown parse type: %s", *parseType)
 	}
 
-	// Open the Excel file
 	xlFile, err := xlsx.OpenFile(*fileName)
 	log.Printf("Opening file: %s", *fileName)
 	if err != nil {
@@ -92,14 +100,12 @@ func main() {
 	cleanData(sheet, parse)
 	remappedData := mapToCSV(sheet, parse)
 
-	// Save the remapped data to a CSV file
-	csvFilePath := "remapped-bank-statement.csv"
-	err = saveToCSV(remappedData, csvFilePath)
+	err = saveToCSV(remappedData, *output)
 	if err != nil {
 		log.Fatalf("Error saving remapped data to CSV: %v", err)
 	}
 
-	fmt.Printf("Remapped data saved to: %s\n", csvFilePath)
+	fmt.Printf("Remapped data saved to: %s\n", *output)
 }
 
 func mapToCSV(sheet *xlsx.Sheet, parse bankParse) [][]string {
